@@ -1,7 +1,7 @@
 # InsightScraper 
 # Overview
 InsightScraper is a web application that automatically collects information from the internet based on keywords. It searches the web, visits relevant websites, extracts useful content, and presents it in an organized way.
-# # How It Works (Simple Flow)
+# How It Works (Simple Flow)
 User enters keyword → Frontend sends request → Backend searches web → Visits top 5 websites → Extracts content → Saves to files → Returns results
 ## ✨ Features
 - **🎯 Intelligent Discovery**: Automatically identifies top authority sources using DuckDuckGo and Google fallback
