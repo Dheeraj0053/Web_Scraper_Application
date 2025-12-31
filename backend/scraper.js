@@ -64,58 +64,48 @@ async function scrapeKeyword(keyword, baseDir) {
         console.log(`Searching for "${keyword}"...`);
         let links = [];
 
-        // Strategy 1: DuckDuckGo (Regular/Lite)
+        // Strategy 1: DuckDuckGo Lite (HTML Only, Robust for Cloud IPs)
         try {
-            console.log("Strategy 1: Attempting DuckDuckGo...");
-            // Use blockResources to save bandwidth
+            console.log("Strategy 1: Attempting DuckDuckGo Lite...");
+
+            // Allow CSS/Fonts for search page to ensure layout renders, only blocking explicit heavy media
             await page.setRequestInterception(true);
             page.on('request', (req) => {
                 const resourceType = req.resourceType();
-                if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                if (['image', 'media'].includes(resourceType)) {
                     req.abort();
                 } else {
                     req.continue();
                 }
             });
 
-            await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(keyword)}&kl=wt-wt`, {
-                waitUntil: 'networkidle2',
-                timeout: 60000 // Increased timeout
+            // Use the Lite version - it's HTML only and much friendlier to scrapers
+            await page.goto(`https://duckduckgo.com/lite/?q=${encodeURIComponent(keyword)}&kl=wt-wt`, {
+                waitUntil: 'domcontentloaded', // Lite loads fast
+                timeout: 30000
             });
 
-            // Try multiple selector patterns for various DDG layouts
-            const selectors = [
-                'a[data-testid="result-title-a"]',
-                '.results--main .result__a',
-                '.result__title a',
-                '#links .result__a'
-            ];
-
-            links = await page.evaluate((selList) => {
-                for (const selector of selList) {
-                    const anchors = Array.from(document.querySelectorAll(selector));
-                    if (anchors.length > 0) {
-                        return anchors.slice(0, 3).map(a => a.href); // Limit to top 3
-                    }
-                }
-                return [];
-            }, selectors);
+            // DDG Lite uses table-based layout. Links are in .result-link
+            links = await page.evaluate(() => {
+                const anchors = Array.from(document.querySelectorAll('.result-link'));
+                return anchors.slice(0, 3).map(a => a.href);
+            });
 
             if (links.length > 0) {
-                console.log(`DDG success: Found ${links.length} sources.`);
+                console.log(`DDG Lite success: Found ${links.length} sources.`);
             }
         } catch (e) {
-            console.log("DuckDuckGo strategy failed or timed out.");
+            console.log("DuckDuckGo Lite strategy failed:", e.message);
         }
 
-        // Strategy 2: Google Fallback (if Strategy 1 failed or returned no links)
+        // Strategy 2: Google Fallback (standard)
         if (links.length === 0) {
             try {
                 console.log("Strategy 2: Attempting Google Search...");
-                // Note: Page request interception is already set above
+                // Note: Request interception persists from above
                 await page.goto(`https://www.google.com/search?q=${encodeURIComponent(keyword)}`, {
                     waitUntil: 'networkidle2',
-                    timeout: 60000 // Increased timeout
+                    timeout: 60000
                 });
 
                 links = await page.evaluate(() => {
@@ -126,7 +116,7 @@ async function scrapeKeyword(keyword, baseDir) {
                         if (href && href.startsWith('http') && !href.includes('google.com')) {
                             urls.push(href);
                         }
-                        if (urls.length >= 3) break; // Limit to top 3
+                        if (urls.length >= 3) break;
                     }
                     return urls;
                 });
@@ -140,7 +130,10 @@ async function scrapeKeyword(keyword, baseDir) {
         }
 
         if (!links || links.length === 0) {
-            throw new Error('Search failed: No intelligence sources could be discovered on the web.');
+            // Log page content for debugging if everything fails
+            const content = await page.content();
+            console.log("DEBUG: Page content length:", content.length);
+            throw new Error('Search failed: No intelligence sources could be discovered. Search engine blocked request.');
         }
 
         console.log(`Deep scanning ${links.length} sources...`);
