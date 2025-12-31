@@ -41,15 +41,12 @@ async function scrapeKeyword(keyword, baseDir) {
         launchOptions.executablePath = executablePath;
     } else {
         console.warn('[Puppeteer] No system Chrome found. Trusting Puppeteer to find its own bundled browser (from cache)...');
-        // Do NOT set executablePath to null/undefined explicitly if it was part of launchOptions
-        // Just don't set it.
         if (launchOptions.executablePath) delete launchOptions['executablePath'];
     }
 
     const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
 
-    // Set a realistic user agent
     // Set a realistic user agent (Randomized)
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -71,6 +68,15 @@ async function scrapeKeyword(keyword, baseDir) {
         console.log(`Searching for "${keyword}"...`);
         let links = [];
 
+        // Helper to validate and filter links
+        const isValidResult = (link) => {
+            if (!link || !link.startsWith('http')) return false;
+            // Filter out search engine domains and common ad networks
+            if (link.includes('google.com') || link.includes('bing.com') || link.includes('yahoo.com') || link.includes('duckduckgo.com')) return false;
+            if (link.includes('microsoft.com') || link.includes('doubleclick')) return false;
+            return true;
+        };
+
         // Strategy 0: Direct URL (Bypass search engine if input looks like a URL)
         if (keyword.match(/^https?:\/\//) || keyword.match(/^[a-zA-Z0-9-]+\.[a-z]{2,}/)) {
             console.log("Input looks like a URL/Domain. Bypassing search engine...");
@@ -78,13 +84,18 @@ async function scrapeKeyword(keyword, baseDir) {
             if (!url.startsWith('http')) url = 'https://' + url;
             links = [url];
         } else {
-            // Proceed to search strategies...
+            // Common headers for better "human" emulation
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Upgrade-Insecure-Requests': '1',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+            });
 
-            // Strategy 1: DuckDuckGo Lite (HTML Only, Robust for Cloud IPs)
+            // Strategy 1: DuckDuckGo HTML 
             try {
-                console.log("Strategy 1: Attempting DuckDuckGo Lite...");
+                console.log("Strategy 1: Attempting DuckDuckGo HTML...");
 
-                // Allow CSS/Fonts for search page to ensure layout renders, only blocking explicit heavy media
+                // Allow CSS/Fonts but block heavy media
                 await page.setRequestInterception(true);
                 page.on('request', (req) => {
                     const resourceType = req.resourceType();
@@ -95,42 +106,41 @@ async function scrapeKeyword(keyword, baseDir) {
                     }
                 });
 
-                // Use the Lite version - it's HTML only and much friendlier to scrapers
-                await page.goto(`https://duckduckgo.com/lite/?q=${encodeURIComponent(keyword)}&kl=wt-wt`, {
-                    waitUntil: 'domcontentloaded', // Lite loads fast
-                    timeout: 30000
+                await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(keyword)}`, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 45000
                 });
 
-                // DDG Lite uses table-based layout. Links are in .result-link
                 links = await page.evaluate(() => {
-                    const anchors = Array.from(document.querySelectorAll('.result-link'));
-                    return anchors.slice(0, 3).map(a => a.href);
+                    // Strict selector for organic results only
+                    const anchors = Array.from(document.querySelectorAll('.results .result__body .result__a'));
+                    return anchors.map(a => a.href);
                 });
 
-                if (links.length > 0) {
-                    console.log(`DDG Lite success: Found ${links.length} sources.`);
-                }
+                links = links.filter(isValidResult).slice(0, 3);
+                if (links.length > 0) console.log(`DDG HTML success: Found ${links.length} sources.`);
             } catch (e) {
-                console.log("DuckDuckGo Lite strategy failed:", e.message);
+                console.log("DuckDuckGo HTML strategy failed:", e.message);
             }
 
             // Strategy 2: Bing Fallback
             if (links.length === 0) {
                 try {
                     console.log("Strategy 2: Attempting Bing Search...");
+                    // Reset to standard navigation for Bing
                     await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(keyword)}`, {
                         waitUntil: 'domcontentloaded',
                         timeout: 45000
                     });
 
                     links = await page.evaluate(() => {
+                        // Strict selector: direct descendant of .b_algo header
                         const anchors = Array.from(document.querySelectorAll('.b_algo h2 a'));
-                        return anchors.slice(0, 3).map(a => a.href);
+                        return anchors.map(a => a.href);
                     });
 
-                    if (links.length > 0) {
-                        console.log(`Bing success: Found ${links.length} sources.`);
-                    }
+                    links = links.filter(isValidResult).slice(0, 3);
+                    if (links.length > 0) console.log(`Bing success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Bing strategy failed:", e.message);
                 }
@@ -146,13 +156,13 @@ async function scrapeKeyword(keyword, baseDir) {
                     });
 
                     links = await page.evaluate(() => {
-                        const anchors = Array.from(document.querySelectorAll('.algo .compTitle a'));
-                        return anchors.slice(0, 3).map(a => a.href);
+                        // Strict selector for Yahoo organic results
+                        const anchors = Array.from(document.querySelectorAll('.algo .compTitle h3 a'));
+                        return anchors.map(a => a.href);
                     });
 
-                    if (links.length > 0) {
-                        console.log(`Yahoo success: Found ${links.length} sources.`);
-                    }
+                    links = links.filter(isValidResult).slice(0, 3);
+                    if (links.length > 0) console.log(`Yahoo success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Yahoo strategy failed:", e.message);
                 }
@@ -162,28 +172,18 @@ async function scrapeKeyword(keyword, baseDir) {
             if (links.length === 0) {
                 try {
                     console.log("Strategy 4: Attempting Google Search...");
-                    // Note: Request interception persists from above
                     await page.goto(`https://www.google.com/search?q=${encodeURIComponent(keyword)}`, {
                         waitUntil: 'networkidle2',
                         timeout: 60000
                     });
 
                     links = await page.evaluate(() => {
-                        const anchors = Array.from(document.querySelectorAll('div.g a, div.tF2Cxc a, a h3'));
-                        const urls = [];
-                        for (const a of anchors) {
-                            const href = a.closest('a')?.href;
-                            if (href && href.startsWith('http') && !href.includes('google.com')) {
-                                urls.push(href);
-                            }
-                            if (urls.length >= 3) break;
-                        }
-                        return urls;
+                        const anchors = Array.from(document.querySelectorAll('div.g a'));
+                        return anchors.map(a => a.href);
                     });
 
-                    if (links.length > 0) {
-                        console.log(`Google success: Found ${links.length} sources.`);
-                    }
+                    links = links.filter(isValidResult).slice(0, 3);
+                    if (links.length > 0) console.log(`Google success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Google strategy failed or timed out.");
                 }

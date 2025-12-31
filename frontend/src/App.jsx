@@ -74,7 +74,7 @@ function App() {
   };
 
   const handleDownload = () => {
-    window.open(`${API_BASE}/download/${keyword}`, '_blank');
+    window.open(`${API_BASE}/download/${encodeURIComponent(keyword)}`, '_blank');
   };
 
   const viewContent = async (domain) => {
