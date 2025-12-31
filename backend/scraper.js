@@ -18,8 +18,29 @@ async function scrapeKeyword(keyword, baseDir) {
     };
 
     // Use system Chromium on Render
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    // We check common paths because Render's path can vary by stack/image
+    const chromePaths = [
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/opt/render/project/.render/chrome/opt/google/chrome/google-chrome'
+    ].filter(Boolean);
+
+    let executablePath = null;
+    for (const p of chromePaths) {
+        if (fs.existsSync(p)) {
+            executablePath = p;
+            console.log(`[Puppeteer] Found Chrome at: ${p}`);
+            break;
+        }
+    }
+
+    if (executablePath) {
+        launchOptions.executablePath = executablePath;
+    } else {
+        console.warn('[Puppeteer] No system Chrome found, trying default bundled browser...');
     }
 
     const browser = await puppeteer.launch(launchOptions);
