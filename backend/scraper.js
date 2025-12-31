@@ -4,10 +4,25 @@ const path = require('path');
 const { URL } = require('url');
 
 async function scrapeKeyword(keyword, baseDir) {
-    const browser = await puppeteer.launch({
+    // Configure Puppeteer for Render deployment
+    const launchOptions = {
         headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1920x1080'
+        ]
+    };
+
+    // Use system Chromium on Render
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    const browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
 
     // Set a realistic user agent
