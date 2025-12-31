@@ -1,4 +1,4 @@
-# Wen Scraper Application- InsightScraper 
+# Web Scraper Application- InsightScraper 
 # Overview
 InsightScraper is a web application that automatically collects information from the internet based on keywords. It searches the web, visits relevant websites, extracts useful content, and presents it in an organized way.
 # How It Works (Simple Flow)
