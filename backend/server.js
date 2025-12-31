@@ -24,8 +24,15 @@ if (!fs.existsSync(scrapesDir)) {
     fs.mkdirSync(scrapesDir);
 }
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', server: 'InsightScraper Backend' });
+});
+
 app.post('/api/scrape', async (req, res) => {
     const { keyword } = req.body;
+
+    console.log(`[REQUEST] Received scrape request for: "${keyword}" from ${req.headers.origin || 'unknown'}`);
 
     if (!keyword) {
         return res.status(400).json({ error: 'Keyword is required' });
@@ -41,7 +48,11 @@ app.post('/api/scrape', async (req, res) => {
         });
     } catch (error) {
         console.error('Scraping error:', error);
-        res.status(500).json({ error: 'Scraping failed', details: error.message });
+        res.status(500).json({
+            error: 'Scraping failed',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'production' ? 'hidden' : error.stack
+        });
     }
 });
 

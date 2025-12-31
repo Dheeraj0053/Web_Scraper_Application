@@ -32,20 +32,22 @@ function App() {
 
     setResults([]);
     setError(null);
-
-    // Step 1: Start Discovery
     setStatus('discovering');
+
+    // Use a variable to track the timer so we can clear it
+    let timer;
 
     try {
       // We simulate the discovery phase transition for UI feel, 
       // then trigger the actual backend work during the extraction phase.
-
-      const timer = setTimeout(() => {
-        setStatus('extracting');
+      timer = setTimeout(() => {
+        setStatus((current) => current === 'error' ? 'error' : 'extracting');
       }, 2500);
 
       const response = await axios.post(`${API_BASE}/scrape`, { keyword });
 
+      // If we got here, success! Clear the "extracting" timer if it hasn't fired,
+      // or if it has fired, we are moving to structuring now.
       clearTimeout(timer);
 
       // Step 3: Transition to Structuring briefly
@@ -58,7 +60,15 @@ function App() {
 
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.details || err.response?.data?.error || 'Intelligence engine encountered an error');
+      // IMPORTANT: Clear the timer so it doesn't flip status to 'extracting' after error
+      clearTimeout(timer);
+
+      const errorMessage = err.response?.data?.details ||
+        err.response?.data?.error ||
+        err.message ||
+        'Intelligence engine encountered an error';
+
+      setError(`Error: ${errorMessage}. (Check backend logs)`);
       setStatus('error');
     }
   };
