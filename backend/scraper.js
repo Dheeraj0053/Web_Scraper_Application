@@ -219,15 +219,16 @@ async function scrapeKeyword(keyword, baseDir) {
                     results.push({ url: link, status: 'failed', error: err.message });
                 }
             }
+        } // End of else block
 
-        } catch (error) {
-            console.error('Search failed:', error);
-            throw error;
-        } finally {
-            await browser.close();
-        }
-
-        return results;
+    } catch (error) {
+        console.error('Search failed:', error);
+        throw error;
+    } finally {
+        await browser.close();
     }
+
+    return results;
+}
 
 module.exports = { scrapeKeyword };
