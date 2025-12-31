@@ -43,9 +43,20 @@ async function scrapeKeyword(keyword, baseDir) {
         // Strategy 1: DuckDuckGo (Regular/Lite)
         try {
             console.log("Strategy 1: Attempting DuckDuckGo...");
+            // Use blockResources to save bandwidth
+            await page.setRequestInterception(true);
+            page.on('request', (req) => {
+                const resourceType = req.resourceType();
+                if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+
             await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(keyword)}&kl=wt-wt`, {
                 waitUntil: 'networkidle2',
-                timeout: 30000
+                timeout: 60000 // Increased timeout
             });
 
             // Try multiple selector patterns for various DDG layouts
@@ -60,7 +71,7 @@ async function scrapeKeyword(keyword, baseDir) {
                 for (const selector of selList) {
                     const anchors = Array.from(document.querySelectorAll(selector));
                     if (anchors.length > 0) {
-                        return anchors.slice(0, 5).map(a => a.href);
+                        return anchors.slice(0, 3).map(a => a.href); // Limit to top 3
                     }
                 }
                 return [];
@@ -77,9 +88,10 @@ async function scrapeKeyword(keyword, baseDir) {
         if (links.length === 0) {
             try {
                 console.log("Strategy 2: Attempting Google Search...");
+                // Note: Page request interception is already set above
                 await page.goto(`https://www.google.com/search?q=${encodeURIComponent(keyword)}`, {
                     waitUntil: 'networkidle2',
-                    timeout: 30000
+                    timeout: 60000 // Increased timeout
                 });
 
                 links = await page.evaluate(() => {
@@ -90,7 +102,7 @@ async function scrapeKeyword(keyword, baseDir) {
                         if (href && href.startsWith('http') && !href.includes('google.com')) {
                             urls.push(href);
                         }
-                        if (urls.length >= 5) break;
+                        if (urls.length >= 3) break; // Limit to top 3
                     }
                     return urls;
                 });
@@ -119,7 +131,20 @@ async function scrapeKeyword(keyword, baseDir) {
 
                 console.log(`Scraping: ${link}`);
                 const detailPage = await browser.newPage();
-                await detailPage.goto(link, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+                // Optimize detail page as well
+                await detailPage.setRequestInterception(true);
+                detailPage.on('request', (req) => {
+                    const resourceType = req.resourceType();
+                    if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+                        req.abort();
+                    } else {
+                        req.continue();
+                    }
+                });
+
+                // Increase timeout for individual pages
+                await detailPage.goto(link, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
                 // Remove noise
                 await detailPage.evaluate(() => {
