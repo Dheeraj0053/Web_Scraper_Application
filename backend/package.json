@@ -19,7 +19,9 @@
     "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "puppeteer": "^23.11.1"
+    "puppeteer": "^23.11.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
