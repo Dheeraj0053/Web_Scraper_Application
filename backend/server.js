@@ -8,9 +8,34 @@ const app = express();
 const PORT = process.env.PORT || 42069;
 
 // Production CORS: Add your frontend URL to your .env file
+const getAllowedOrigin = (origin, callback) => {
+    const allowedUrl = process.env.FRONTEND_URL || '*';
+
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    // If wildcard is set, allow all
+    if (allowedUrl === '*') return callback(null, true);
+
+    // Normalize URLs (remove trailing slashes) for comparison
+    const normalize = (url) => url ? url.replace(/\/$/, '') : '';
+    const allowed = normalize(allowedUrl);
+    const requestOrigin = normalize(origin);
+
+    console.log(`[CORS] Checking origin: ${requestOrigin} against allowed: ${allowed}`);
+
+    if (allowed === requestOrigin) {
+        callback(null, true);
+    } else {
+        console.warn(`[CORS] Blocked request from: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+    }
+};
+
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || '*',
-    optionsSuccessStatus: 200
+    origin: getAllowedOrigin,
+    optionsSuccessStatus: 200,
+    credentials: true,
 };
 
 app.use(cors(corsOptions));
