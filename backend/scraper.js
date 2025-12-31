@@ -68,17 +68,17 @@ async function scrapeKeyword(keyword, baseDir) {
         console.log(`Searching for "${keyword}"...`);
         let links = [];
 
-        // Helper to validate and filter links
+        // Helper to validate and filter links (RELAXED)
         const isValidResult = (link) => {
             if (!link || !link.startsWith('http')) return false;
-            // Filter out search engine domains and common ad networks
-            if (link.includes('google.com') || link.includes('bing.com') || link.includes('yahoo.com') || link.includes('duckduckgo.com')) return false;
-            if (link.includes('microsoft.com') || link.includes('doubleclick')) return false;
+            // Removed strict blocklist for google/bing to allow valid redirection links
+            if (link.includes('microsoft.com') || link.includes('doubleclick') || link.includes('ads')) return false;
             return true;
         };
 
         // Strategy 0: Direct URL (Bypass search engine if input looks like a URL)
-        if (keyword.match(/^https?:\/\//) || keyword.match(/^[a-zA-Z0-9-]+\.[a-z]{2,}/)) {
+        // Also supports domains without protocol like "wikipedia.org"
+        if (keyword.match(/^https?:\/\//) || keyword.match(/^[a-zA-Z0-9-]+\.[a-z]{2,}$/)) {
             console.log("Input looks like a URL/Domain. Bypassing search engine...");
             let url = keyword;
             if (!url.startsWith('http')) url = 'https://' + url;
@@ -91,36 +91,60 @@ async function scrapeKeyword(keyword, baseDir) {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
             });
 
-            // Strategy 1: DuckDuckGo HTML 
+            // Strategy 0.5: Wikipedia Direct (High reliability "Nucleur Option")
+            // If the user wants "intelligence", Wikipedia is usually the best start and RARELY blocks.
             try {
-                console.log("Strategy 1: Attempting DuckDuckGo HTML...");
-
-                // Allow CSS/Fonts but block heavy media
-                await page.setRequestInterception(true);
-                page.on('request', (req) => {
-                    const resourceType = req.resourceType();
-                    if (['image', 'media'].includes(resourceType)) {
-                        req.abort();
-                    } else {
-                        req.continue();
-                    }
-                });
-
-                await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(keyword)}`, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 45000
-                });
-
-                links = await page.evaluate(() => {
-                    // Strict selector for organic results only
-                    const anchors = Array.from(document.querySelectorAll('.results .result__body .result__a'));
-                    return anchors.map(a => a.href);
-                });
-
-                links = links.filter(isValidResult).slice(0, 3);
-                if (links.length > 0) console.log(`DDG HTML success: Found ${links.length} sources.`);
+                console.log("Strategy 0.5: Checking Wikipedia...");
+                const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(keyword.replace(/ /g, '_'))}`;
+                const response = await page.goto(wikiUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                if (response.status() === 200) {
+                    console.log("Wikipedia Page Found!");
+                    links.push(wikiUrl);
+                } else if (response.status() === 404) {
+                    // Try search on Wikipedia if direct link fails
+                    await page.goto(`https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(keyword)}`, { waitUntil: 'domcontentloaded' });
+                    const wikiLinks = await page.evaluate(() => {
+                        const anchors = Array.from(document.querySelectorAll('.mw-search-result-heading a'));
+                        return anchors.slice(0, 2).map(a => a.href);
+                    });
+                    links.push(...wikiLinks);
+                }
             } catch (e) {
-                console.log("DuckDuckGo HTML strategy failed:", e.message);
+                console.log("Wikipedia strategy failed:", e.message);
+            }
+
+            // Strategy 1: DuckDuckGo HTML 
+            if (links.length === 0) {
+                try {
+                    console.log("Strategy 1: Attempting DuckDuckGo HTML...");
+
+                    // Allow CSS/Fonts but block heavy media
+                    await page.setRequestInterception(true);
+                    page.on('request', (req) => {
+                        const resourceType = req.resourceType();
+                        if (['image', 'media'].includes(resourceType)) {
+                            req.abort();
+                        } else {
+                            req.continue();
+                        }
+                    });
+
+                    await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(keyword)}`, {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 45000
+                    });
+
+                    const ddgLinks = await page.evaluate(() => {
+                        // Strict selector for organic results only
+                        const anchors = Array.from(document.querySelectorAll('.results .result__body .result__a'));
+                        return anchors.map(a => a.href);
+                    });
+
+                    links.push(...ddgLinks.filter(isValidResult).slice(0, 3));
+                    if (links.length > 0) console.log(`DDG HTML success: Found ${links.length} sources.`);
+                } catch (e) {
+                    console.log("DuckDuckGo HTML strategy failed:", e.message);
+                }
             }
 
             // Strategy 2: Bing Fallback
@@ -133,13 +157,13 @@ async function scrapeKeyword(keyword, baseDir) {
                         timeout: 45000
                     });
 
-                    links = await page.evaluate(() => {
+                    const bingLinks = await page.evaluate(() => {
                         // Strict selector: direct descendant of .b_algo header
                         const anchors = Array.from(document.querySelectorAll('.b_algo h2 a'));
                         return anchors.map(a => a.href);
                     });
 
-                    links = links.filter(isValidResult).slice(0, 3);
+                    links.push(...bingLinks.filter(isValidResult).slice(0, 3));
                     if (links.length > 0) console.log(`Bing success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Bing strategy failed:", e.message);
@@ -155,13 +179,13 @@ async function scrapeKeyword(keyword, baseDir) {
                         timeout: 45000
                     });
 
-                    links = await page.evaluate(() => {
+                    const yahooLinks = await page.evaluate(() => {
                         // Strict selector for Yahoo organic results
                         const anchors = Array.from(document.querySelectorAll('.algo .compTitle h3 a'));
                         return anchors.map(a => a.href);
                     });
 
-                    links = links.filter(isValidResult).slice(0, 3);
+                    links.push(...yahooLinks.filter(isValidResult).slice(0, 3));
                     if (links.length > 0) console.log(`Yahoo success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Yahoo strategy failed:", e.message);
@@ -177,15 +201,33 @@ async function scrapeKeyword(keyword, baseDir) {
                         timeout: 60000
                     });
 
-                    links = await page.evaluate(() => {
+                    const googleLinks = await page.evaluate(() => {
                         const anchors = Array.from(document.querySelectorAll('div.g a'));
                         return anchors.map(a => a.href);
                     });
 
-                    links = links.filter(isValidResult).slice(0, 3);
+                    links.push(...googleLinks.filter(isValidResult).slice(0, 3));
                     if (links.length > 0) console.log(`Google success: Found ${links.length} sources.`);
                 } catch (e) {
                     console.log("Google strategy failed or timed out.");
+                }
+            }
+
+            // Strategy 5: The "Desperation" Fallback (Link Discovery)
+            // If all search engine selectors failed (blocked/changed DOM), just grab ANY external http link from the current page
+            if (links.length === 0 && !keyword.startsWith('http')) {
+                try {
+                    console.log("Strategy 5: Desperation Mode - Scanning for ANY valid links on current page...");
+                    const anyLinks = await page.evaluate(() => {
+                        return Array.from(document.querySelectorAll('a'))
+                            .map(a => a.href)
+                            .filter(href => href.startsWith('http') && !href.includes(location.hostname));
+                    });
+                    // Filter and take top 3
+                    links.push(...anyLinks.filter(isValidResult).slice(0, 3));
+                    if (links.length > 0) console.log(`Desperation success: Found ${links.length} random links.`);
+                } catch (e) {
+                    console.log("Desperation strategy failed.");
                 }
             }
 
@@ -193,7 +235,7 @@ async function scrapeKeyword(keyword, baseDir) {
                 // Log page content for debugging if everything fails
                 const content = await page.content();
                 console.log("DEBUG: Page content length:", content.length);
-                throw new Error('Search failed: No intelligence sources could be discovered. Search engine blocked request.');
+                throw new Error('Search failed: No intelligence sources could be discovered. Please try entering a Direct URL.');
             }
 
             console.log(`Deep scanning ${links.length} sources...`);
