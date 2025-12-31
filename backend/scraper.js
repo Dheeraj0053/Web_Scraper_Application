@@ -114,10 +114,54 @@ async function scrapeKeyword(keyword, baseDir) {
                 console.log("DuckDuckGo Lite strategy failed:", e.message);
             }
 
-            // Strategy 2: Google Fallback (standard)
+            // Strategy 2: Bing Fallback
             if (links.length === 0) {
                 try {
-                    console.log("Strategy 2: Attempting Google Search...");
+                    console.log("Strategy 2: Attempting Bing Search...");
+                    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(keyword)}`, {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 45000
+                    });
+
+                    links = await page.evaluate(() => {
+                        const anchors = Array.from(document.querySelectorAll('.b_algo h2 a'));
+                        return anchors.slice(0, 3).map(a => a.href);
+                    });
+
+                    if (links.length > 0) {
+                        console.log(`Bing success: Found ${links.length} sources.`);
+                    }
+                } catch (e) {
+                    console.log("Bing strategy failed:", e.message);
+                }
+            }
+
+            // Strategy 3: Yahoo Fallback
+            if (links.length === 0) {
+                try {
+                    console.log("Strategy 3: Attempting Yahoo Search...");
+                    await page.goto(`https://search.yahoo.com/search?p=${encodeURIComponent(keyword)}`, {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 45000
+                    });
+
+                    links = await page.evaluate(() => {
+                        const anchors = Array.from(document.querySelectorAll('.algo .compTitle a'));
+                        return anchors.slice(0, 3).map(a => a.href);
+                    });
+
+                    if (links.length > 0) {
+                        console.log(`Yahoo success: Found ${links.length} sources.`);
+                    }
+                } catch (e) {
+                    console.log("Yahoo strategy failed:", e.message);
+                }
+            }
+
+            // Strategy 4: Google Fallback (standard)
+            if (links.length === 0) {
+                try {
+                    console.log("Strategy 4: Attempting Google Search...");
                     // Note: Request interception persists from above
                     await page.goto(`https://www.google.com/search?q=${encodeURIComponent(keyword)}`, {
                         waitUntil: 'networkidle2',
