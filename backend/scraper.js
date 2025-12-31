@@ -30,7 +30,7 @@ async function scrapeKeyword(keyword, baseDir) {
 
     let executablePath = null;
     for (const p of chromePaths) {
-        if (fs.existsSync(p)) {
+        if (p && fs.existsSync(p)) {
             executablePath = p;
             console.log(`[Puppeteer] Found Chrome at: ${p}`);
             break;
@@ -40,7 +40,10 @@ async function scrapeKeyword(keyword, baseDir) {
     if (executablePath) {
         launchOptions.executablePath = executablePath;
     } else {
-        console.warn('[Puppeteer] No system Chrome found, trying default bundled browser...');
+        console.warn('[Puppeteer] No system Chrome found. Trusting Puppeteer to find its own bundled browser (from cache)...');
+        // Do NOT set executablePath to null/undefined explicitly if it was part of launchOptions
+        // Just don't set it.
+        if (launchOptions.executablePath) delete launchOptions['executablePath'];
     }
 
     const browser = await puppeteer.launch(launchOptions);
